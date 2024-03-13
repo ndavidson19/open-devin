@@ -1,0 +1,4 @@
+langchain
+langgraph
+sqlalchemy
+bs4
