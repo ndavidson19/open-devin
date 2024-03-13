@@ -11,40 +11,62 @@ from devin.tools import (
     get_issue,
     comment_on_issue,
     run_sql_query,
+    shell_tool,
 )
 from github import Github
 import os
+import random
 
 def main():
-
     set_environment_variables()
-    #db = SQLDatabase.from_uri(os.environ["SQLALCHEMY_DATABASE_URI"])
 
+    # Initialize ChatOpenAI with OpenAI API Key
     llm = ChatOpenAI(model="gpt-4-1106-preview")
 
-    # Assume these agents have been defined with the appropriate system messages
+    # Create CoT Planner/Routing Agent
     cot_planner_agent = create_agent(
         llm,
-        [search_and_filter_urls, get_issues, get_issue, comment_on_issue],
-        system_message="You will plan and route tasks for software engineering.",
+        [get_issues, get_issue, comment_on_issue],
+        system_message="Create a detailed plan to address a GitHub issue.",
     )
 
+    # Create Code Generation Agent
     code_gen_agent = create_agent(
         llm,
-        [python_repl, run_sql_query],  # You can add ShellTool if needed
-        system_message="You will execute and manage code generation.",
+        [python_repl, shell_tool],  # Assuming shell_tool is well defined to clone repos and manage files
+        system_message="Execute code changes based on the plan.",
+    )
+
+    # Create Web Search Agent
+    web_search_agent = create_agent(
+        llm,
+        [search_and_filter_urls],
+        system_message="Search the web for solutions to coding problems.",
     )
 
     # Setup the graph to include the agents and define how they interact
-    graph = setup_graph(cot_planner_agent, code_gen_agent)
+    graph = setup_graph(cot_planner_agent, code_gen_agent, web_search_agent)
 
-    # Example task: Retrieve and store GitHub issues in the database
+    # User inputs the GitHub repository as part of the prompt
+    user_prompt = input("Please enter the GitHub repository (e.g., 'owner/repo'): ")
+    repository = user_prompt.strip()
+
+    # Fetch issues from the repository
+    issues = get_issues(repository)
+    if not issues:
+        print("No open issues found in the repository.")
+        return
+
+    # Randomly pick an issue to solve
+    selected_issue = random.choice(issues.split('\n'))
+    issue_number = int(selected_issue.split(":")[0])
+    print(f"Selected issue to solve: {selected_issue}")
+
+    # Stream the process through the graph
     for s in graph.stream(
         {
             "messages": [
-                HumanMessage(
-                    content="Retrieve issues from the llama.cpp GitHub repository https://github.com/ggerganov/llama.cpp and try to fix one of them."
-                )
+                HumanMessage(content=f"Generate a plan to fix issue number {issue_number} in the repository {repository}.")
             ],
         },
         {"recursion_limit": 150},
